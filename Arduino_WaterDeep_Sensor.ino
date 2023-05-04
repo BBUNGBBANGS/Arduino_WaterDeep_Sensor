@@ -11,7 +11,7 @@ const uint8_t txPin = 9; //변경 금지
 // Set up a new SoftwareSerial object
 SoftwareSerial SoftSerial(rxPin, txPin);
 
-uint8_t Data_Receive_Flag;
+int32_t Trigger_Interval_Time;
 
 void digital_toggle( uint8_t pin )
 {
@@ -20,8 +20,7 @@ void digital_toggle( uint8_t pin )
 
 void trigger_cb()
 {
-    digitalWrite(txPin, HIGH);  //트리거 중지
-    Data_Receive_Flag = 1;
+    digitalWrite(txPin, HIGH);  //트리거 중지=
     FlexiTimer2::stop();
 }
 
@@ -36,7 +35,7 @@ void setup()
     lcd.backlight();
     lcd.clear();  
     delay(1000);
-    Serial.println("Init Finished2");
+    Serial.println("Init Finished");
 }
 
 void loop() 
@@ -47,45 +46,63 @@ void loop()
     uint16_t distance = 0;
     uint16_t length = 0;
     uint8_t sum = 0;
-    if ((millis() - trigger_time) > 500)
+    float velocity = 0.0f;
+    char out_txt[16] = {0};
+
+    if ((millis() - trigger_time) >= 0)
+    {
+        Trigger_Interval_Time = millis() - trigger_time;
+    }
+    else
+    {
+        Trigger_Interval_Time = trigger_time - millis();
+    }
+    
+    if (Trigger_Interval_Time > 500)
     {
         digitalWrite(txPin, LOW);  //트리거 센서 출력
         FlexiTimer2::start();
         trigger_time = millis();
-    }
-    if ((SoftSerial.available() > 0) && (Data_Receive_Flag == 1))
-    {
-        for(uint8_t i = 0; i < 4; i ++)
+        /* 4- Byte 센서 데이터 수신 */
+        while(!(SoftSerial.available() >= 4));
+
+        /* 4- Byte 센서 데이터 Copy */
+        for (uint8_t i = 0; i < 4; i++)
         {
             recv_buf[i] = SoftSerial.read();
-            Serial.write(recv_buf[i]);
             length++;
         }
-    }
 
-    if ((length == 4) && (recv_buf[0] == 0xff) && (Data_Receive_Flag == 1))
-    {
-        sum = recv_buf[0] + recv_buf[1] + recv_buf[2];
-        if (sum == recv_buf[3])
+        if ((length == 4) && (recv_buf[0] == 0xff))
         {
-            distance = (recv_buf[1] << 8) | recv_buf[2];
-            float velocity = distance/(millis() - trigger_time);
-            char out_txt[16] = {0};
-            sprintf(out_txt, "%d mm \r\n", distance);
-            Serial.println(out_txt) ;
-            Serial.print(velocity);Serial.println("m/sec");
-            Serial.println(millis() - trigger_time);
+            sum = recv_buf[0] + recv_buf[1] + recv_buf[2];
+            if (sum == recv_buf[3])
+            {
+                distance = (recv_buf[1] << 8) | recv_buf[2];
+                if (Trigger_Interval_Time != 0)   
+                {
+                    velocity = distance / Trigger_Interval_Time;
+                }
+                else
+                {
+                    velocity = 0.0f;
+                }
+                sprintf(out_txt, "%d mm \r\n", distance);
+                Serial.println(out_txt) ;
+                Serial.print(velocity);
+                Serial.println("m/sec");
+                Serial.println(Trigger_Interval_Time);
 
-            lcd.clear();
-            lcd.setCursor(1, 0);
-            lcd.print("Distance Check");
-            lcd.setCursor(1, 1);
-            lcd.print(distance); 
-            lcd.print("mm "); 
-            lcd.print(velocity); 
-            lcd.print("m/sec");
+                lcd.clear();
+                lcd.setCursor(1, 0);
+                lcd.print("Distance Check");
+                lcd.setCursor(1, 1);
+                lcd.print(distance); 
+                lcd.print("mm "); 
+                lcd.print(velocity); 
+                lcd.print("m/sec");
+            }
         }
-        Data_Receive_Flag = 0;
     }
     
     if ((millis() - led_time) > 100 )
